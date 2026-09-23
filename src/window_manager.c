@@ -1303,15 +1303,6 @@ void window_manager_focus_window_without_raise(ProcessSerialNumber *window_psn, 
         memcpy(g_event_bytes + 0x3c, &g_window_manager.focused_window_id, sizeof(uint32_t));
         SLPSPostEventRecordTo(&g_window_manager.focused_window_psn, g_event_bytes);
 
-        //
-        // @hack
-        // Artificially delay the activation by 40ms. This is necessary
-        // because some applications appear to be confused if both of
-        // the events appear instantaneously.
-        //
-
-        usleep(40000);
-
         g_event_bytes[0x8a] = 0x01;
         memcpy(g_event_bytes + 0x3c, &window_id, sizeof(uint32_t));
         SLPSPostEventRecordTo(window_psn, g_event_bytes);
@@ -1611,6 +1602,26 @@ bool window_manager_add_existing_application_windows(struct space_manager *sm, s
     int global_window_count;
     uint32_t *global_window_list = window_manager_existing_application_window_list(application, &global_window_count);
     if (!global_window_list) return result;
+
+    //
+    // NOTE: The AX API only reports windows on visible spaces. If every missing window
+    // is on a hidden space, asking the application again cannot resolve anything.
+    //
+
+    if (refresh_index != -1) {
+        bool missing = false;
+        bool visible = false;
+
+        for (int i = 0; i < global_window_count && !visible; ++i) {
+            if (window_manager_find_window(wm, global_window_list[i])) continue;
+
+            uint64_t sid = window_space(global_window_list[i]);
+            missing = true;
+            visible = !sid || space_is_visible(sid);
+        }
+
+        if (missing && !visible) return result;
+    }
 
     CFArrayRef window_list_ref = application_window_list(application);
     int window_count = window_list_ref ? CFArrayGetCount(window_list_ref) : 0;
@@ -2264,7 +2275,8 @@ void window_manager_wait_for_native_fullscreen_transition(struct window *window)
         workspace_is_macos_ventura() ||
         workspace_is_macos_sonoma() ||
         workspace_is_macos_sequoia() ||
-        workspace_is_macos_tahoe()) {
+        workspace_is_macos_tahoe() ||
+        workspace_is_macos_goldengate()) {
         while (!space_is_user(space_manager_active_space())) {
 
             //

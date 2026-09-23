@@ -18,7 +18,7 @@ static void update_window_notifications(void)
     int window_count = 0;
     uint32_t window_list[1024] = {0};
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe() || workspace_is_macos_goldengate()) {
         // NOTE(asmvik): Subscribe to all windows because of window_destroyed (and ordered) notifications
         table_for (struct window *window, g_window_manager.window, {
             window_list[window_count++] = window->id;
@@ -33,6 +33,28 @@ static void update_window_notifications(void)
     SLSRequestNotificationsForWindows(g_connection, window_list, window_count);
 }
 
+static float ffm_ms_since_request(void)
+{
+    return (float)(read_os_timer() - g_mouse_state.ffm_time) * (1000.0f / (float)read_os_freq());
+}
+
+//
+// NOTE: Only a repeated request for the same target is suppressed. Moving to another
+// window is never blocked by a focus notification that hasn't arrived yet.
+// Display ids are tagged with bit 32 so they can't collide with window ids.
+//
+
+static bool ffm_is_pending(uint64_t key)
+{
+    return g_mouse_state.ffm_key == key && ffm_ms_since_request() < 200.0f;
+}
+
+static void ffm_set_pending(uint64_t key)
+{
+    g_mouse_state.ffm_key = key;
+    g_mouse_state.ffm_time = read_os_timer();
+}
+
 static void window_did_receive_focus(struct window_manager *wm, struct mouse_state *ms, struct window *window)
 {
     struct window *focused_window = window_manager_find_window(wm, wm->focused_window_id);
@@ -43,7 +65,7 @@ static void window_did_receive_focus(struct window_manager *wm, struct mouse_sta
     window_manager_set_window_opacity(wm, window, wm->active_window_opacity);
 
     if (wm->focused_window_id != window->id) {
-        if (ms->ffm_window_id != window->id) {
+        if (ms->ffm_window_id != window->id && ffm_ms_since_request() > 500.0f) {
             window_manager_center_mouse(wm, window);
         }
 
@@ -242,7 +264,7 @@ static EVENT_HANDLER(APPLICATION_LAUNCHED)
         view_clear_flag(view, VIEW_IS_DIRTY);
     }
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe() || workspace_is_macos_goldengate()) {
         update_window_notifications();
     }
 }
@@ -336,7 +358,7 @@ static EVENT_HANDLER(APPLICATION_TERMINATED)
         view_clear_flag(view, VIEW_IS_DIRTY);
     }
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe() || workspace_is_macos_goldengate()) {
         update_window_notifications();
     }
 
@@ -595,7 +617,7 @@ static EVENT_HANDLER(WINDOW_CREATED)
         event_signal_push(SIGNAL_WINDOW_CREATED, window);
     }
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe() || workspace_is_macos_goldengate()) {
         update_window_notifications();
     }
 }
@@ -628,7 +650,7 @@ static EVENT_HANDLER(WINDOW_DESTROYED)
     window_unobserve(window);
     window_destroy(window);
 
-    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
+    if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe() || workspace_is_macos_goldengate()) {
         update_window_notifications();
     }
 }
@@ -1004,7 +1026,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
     debug("%s: %lld\n", __FUNCTION__, g_space_manager.current_space_id);
     struct view *view = space_manager_find_view(&g_space_manager, g_space_manager.current_space_id);
 
-    if (space_manager_refresh_application_windows(&g_space_manager)) {
+    if (space_manager_refresh_application_windows(&g_space_manager) && g_window_manager.window_lost_focused_event.count) {
         struct window *focused_window = window_manager_focused_window(&g_window_manager);
         if (focused_window && window_manager_find_lost_focused_event(&g_window_manager, focused_window->id)) {
             window_did_receive_focus(&g_window_manager, &g_mouse_state, focused_window);
@@ -1013,6 +1035,14 @@ static EVENT_HANDLER(SPACE_CHANGED)
     }
 
     if (!mission_control_is_active() && space_is_user(g_space_manager.current_space_id)) {
+        //
+        // NOTE: This layout changed while the space was hidden and the user never saw the
+        // old one. Animating it would delay the switch while every window is captured.
+        //
+
+        float window_animation_duration = g_window_manager.window_animation_duration;
+        g_window_manager.window_animation_duration = 0.0f;
+
         window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, g_space_manager.current_space_id);
 
         if (view_is_invalid(view)) {
@@ -1023,6 +1053,8 @@ static EVENT_HANDLER(SPACE_CHANGED)
             window_node_flush(view->root);
             view_clear_flag(view, VIEW_IS_DIRTY);
         }
+
+        g_window_manager.window_animation_duration = window_animation_duration;
     }
 
     event_signal_push(SIGNAL_SPACE_CHANGED, NULL);
@@ -1344,9 +1376,11 @@ out:
 
 static EVENT_HANDLER(MOUSE_MOVED)
 {
+    context = __atomic_exchange_n(&g_mouse_state.pending_move, NULL, __ATOMIC_ACQ_REL);
+    if (!context) return;
+
     if (g_window_manager.ffm_mode == FFM_DISABLED) goto out;
     if (mission_control_is_active())               goto out;
-    if (g_mouse_state.ffm_window_id)               goto out;
 
     if (__atomic_load_n(&__pending_gesture, __ATOMIC_RELAXED)) goto out;
     uint64_t last_gesture_time = __atomic_load_n(&__last_gesture_time, __ATOMIC_RELAXED);
@@ -1358,7 +1392,10 @@ static EVENT_HANDLER(MOUSE_MOVED)
 
     if (window) {
         if (window->id == g_window_manager.focused_window_id) goto out;
+        if (ffm_is_pending(window->id))                       goto out;
         if (!window_manager_is_window_eligible(window))       goto out;
+
+        ffm_set_pending(window->id);
 
         if (g_window_manager.ffm_mode == FFM_AUTOFOCUS) {
 
@@ -1436,10 +1473,12 @@ static EVENT_HANDLER(MOUSE_MOVED)
     } else {
         uint32_t cursor_did = display_manager_point_display_id(point);
         if (g_display_manager.current_display_id == cursor_did) goto out;
+        if (ffm_is_pending((1ULL << 32) | cursor_did))          goto out;
 
         CGRect bounds = display_bounds_constrained(cursor_did, false);
         if (!cgrect_contains_point(bounds, point)) goto out;
 
+        ffm_set_pending((1ULL << 32) | cursor_did);
         uint32_t wid = display_manager_focus_display_with_window_at_point(point);
         if (!wid) display_manager_set_active_display_id(cursor_did);
         g_mouse_state.ffm_window_id = wid;
@@ -1550,7 +1589,8 @@ static EVENT_HANDLER(DOCK_DID_RESTART)
         workspace_is_macos_ventura() ||
         workspace_is_macos_sonoma() ||
         workspace_is_macos_sequoia() ||
-        workspace_is_macos_tahoe()) {
+        workspace_is_macos_tahoe() ||
+        workspace_is_macos_goldengate()) {
         mission_control_unobserve();
         mission_control_observe();
     }

@@ -6,6 +6,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 ### Changed
+- Added support for macOS 27 Golden Gate, with scripting-addition patterns for both the arm64e and arm64e.x1 Dock binaries
+- Removed support for Intel x86-64
+- Fixed focus follows mouse stalling while a focus change is pending, and removed the delay when switching between windows of the same application
+- Made space changes faster by skipping the AX query for the active display on single-display setups, not animating layouts that changed while the space was hidden, and not re-querying applications whose missing windows are on hidden spaces
+- Coalesced queued mouse-moved events
 - Fixed scripting-addition *add_space* pattern for macOS 26.6 Apple Silicon arm64 [#2799](https://github.com/asmvik/yabai/issues/2799)
 - Fixed minor memory leak on space destruction, and added a few missing null checks to SkyLight API calls [#2791](https://github.com/asmvik/yabai/issues/2791)
 
