@@ -33,6 +33,28 @@ static void update_window_notifications(void)
     SLSRequestNotificationsForWindows(g_connection, window_list, window_count);
 }
 
+static float ffm_ms_since_request(void)
+{
+    return (float)(read_os_timer() - g_mouse_state.ffm_time) * (1000.0f / (float)read_os_freq());
+}
+
+//
+// NOTE: Only a repeated request for the same target is suppressed. Moving to another
+// window is never blocked by a focus notification that hasn't arrived yet.
+// Display ids are tagged with bit 32 so they can't collide with window ids.
+//
+
+static bool ffm_is_pending(uint64_t key)
+{
+    return g_mouse_state.ffm_key == key && ffm_ms_since_request() < 200.0f;
+}
+
+static void ffm_set_pending(uint64_t key)
+{
+    g_mouse_state.ffm_key = key;
+    g_mouse_state.ffm_time = read_os_timer();
+}
+
 static void window_did_receive_focus(struct window_manager *wm, struct mouse_state *ms, struct window *window)
 {
     struct window *focused_window = window_manager_find_window(wm, wm->focused_window_id);
@@ -43,7 +65,7 @@ static void window_did_receive_focus(struct window_manager *wm, struct mouse_sta
     window_manager_set_window_opacity(wm, window, wm->active_window_opacity);
 
     if (wm->focused_window_id != window->id) {
-        if (ms->ffm_window_id != window->id) {
+        if (ms->ffm_window_id != window->id && ffm_ms_since_request() > 500.0f) {
             window_manager_center_mouse(wm, window);
         }
 
@@ -1346,7 +1368,6 @@ static EVENT_HANDLER(MOUSE_MOVED)
 {
     if (g_window_manager.ffm_mode == FFM_DISABLED) goto out;
     if (mission_control_is_active())               goto out;
-    if (g_mouse_state.ffm_window_id)               goto out;
 
     if (__atomic_load_n(&__pending_gesture, __ATOMIC_RELAXED)) goto out;
     uint64_t last_gesture_time = __atomic_load_n(&__last_gesture_time, __ATOMIC_RELAXED);
@@ -1358,7 +1379,10 @@ static EVENT_HANDLER(MOUSE_MOVED)
 
     if (window) {
         if (window->id == g_window_manager.focused_window_id) goto out;
+        if (ffm_is_pending(window->id))                       goto out;
         if (!window_manager_is_window_eligible(window))       goto out;
+
+        ffm_set_pending(window->id);
 
         if (g_window_manager.ffm_mode == FFM_AUTOFOCUS) {
 
@@ -1436,10 +1460,12 @@ static EVENT_HANDLER(MOUSE_MOVED)
     } else {
         uint32_t cursor_did = display_manager_point_display_id(point);
         if (g_display_manager.current_display_id == cursor_did) goto out;
+        if (ffm_is_pending((1ULL << 32) | cursor_did))          goto out;
 
         CGRect bounds = display_bounds_constrained(cursor_did, false);
         if (!cgrect_contains_point(bounds, point)) goto out;
 
+        ffm_set_pending((1ULL << 32) | cursor_did);
         uint32_t wid = display_manager_focus_display_with_window_at_point(point);
         if (!wid) display_manager_set_active_display_id(cursor_did);
         g_mouse_state.ffm_window_id = wid;

@@ -1303,15 +1303,6 @@ void window_manager_focus_window_without_raise(ProcessSerialNumber *window_psn, 
         memcpy(g_event_bytes + 0x3c, &g_window_manager.focused_window_id, sizeof(uint32_t));
         SLPSPostEventRecordTo(&g_window_manager.focused_window_psn, g_event_bytes);
 
-        //
-        // @hack
-        // Artificially delay the activation by 40ms. This is necessary
-        // because some applications appear to be confused if both of
-        // the events appear instantaneously.
-        //
-
-        usleep(40000);
-
         g_event_bytes[0x8a] = 0x01;
         memcpy(g_event_bytes + 0x3c, &window_id, sizeof(uint32_t));
         SLPSPostEventRecordTo(window_psn, g_event_bytes);
