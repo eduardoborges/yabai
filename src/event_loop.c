@@ -1026,7 +1026,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
     debug("%s: %lld\n", __FUNCTION__, g_space_manager.current_space_id);
     struct view *view = space_manager_find_view(&g_space_manager, g_space_manager.current_space_id);
 
-    if (space_manager_refresh_application_windows(&g_space_manager)) {
+    if (space_manager_refresh_application_windows(&g_space_manager) && g_window_manager.window_lost_focused_event.count) {
         struct window *focused_window = window_manager_focused_window(&g_window_manager);
         if (focused_window && window_manager_find_lost_focused_event(&g_window_manager, focused_window->id)) {
             window_did_receive_focus(&g_window_manager, &g_mouse_state, focused_window);
@@ -1035,6 +1035,14 @@ static EVENT_HANDLER(SPACE_CHANGED)
     }
 
     if (!mission_control_is_active() && space_is_user(g_space_manager.current_space_id)) {
+        //
+        // NOTE: This layout changed while the space was hidden and the user never saw the
+        // old one. Animating it would delay the switch while every window is captured.
+        //
+
+        float window_animation_duration = g_window_manager.window_animation_duration;
+        g_window_manager.window_animation_duration = 0.0f;
+
         window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, g_space_manager.current_space_id);
 
         if (view_is_invalid(view)) {
@@ -1045,6 +1053,8 @@ static EVENT_HANDLER(SPACE_CHANGED)
             window_node_flush(view->root);
             view_clear_flag(view, VIEW_IS_DIRTY);
         }
+
+        g_window_manager.window_animation_duration = window_animation_duration;
     }
 
     event_signal_push(SIGNAL_SPACE_CHANGED, NULL);
@@ -1366,6 +1376,9 @@ out:
 
 static EVENT_HANDLER(MOUSE_MOVED)
 {
+    context = __atomic_exchange_n(&g_mouse_state.pending_move, NULL, __ATOMIC_ACQ_REL);
+    if (!context) return;
+
     if (g_window_manager.ffm_mode == FFM_DISABLED) goto out;
     if (mission_control_is_active())               goto out;
 

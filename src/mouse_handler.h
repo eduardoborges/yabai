@@ -76,6 +76,7 @@ struct mouse_state
     struct window *window;
     CGRect window_frame;
     uint32_t ffm_window_id;
+    void *pending_move;
     uint64_t ffm_key;
     uint64_t ffm_time;
     uint8_t direction;

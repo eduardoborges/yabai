@@ -1603,6 +1603,26 @@ bool window_manager_add_existing_application_windows(struct space_manager *sm, s
     uint32_t *global_window_list = window_manager_existing_application_window_list(application, &global_window_count);
     if (!global_window_list) return result;
 
+    //
+    // NOTE: The AX API only reports windows on visible spaces. If every missing window
+    // is on a hidden space, asking the application again cannot resolve anything.
+    //
+
+    if (refresh_index != -1) {
+        bool missing = false;
+        bool visible = false;
+
+        for (int i = 0; i < global_window_count && !visible; ++i) {
+            if (window_manager_find_window(wm, global_window_list[i])) continue;
+
+            uint64_t sid = window_space(global_window_list[i]);
+            missing = true;
+            visible = !sid || space_is_visible(sid);
+        }
+
+        if (missing && !visible) return result;
+    }
+
     CFArrayRef window_list_ref = application_window_list(application);
     int window_count = window_list_ref ? CFArrayGetCount(window_list_ref) : 0;
 

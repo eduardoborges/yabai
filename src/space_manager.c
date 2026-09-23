@@ -653,12 +653,23 @@ uint64_t space_manager_last_space(void)
 uint64_t space_manager_active_space(void)
 {
     uint32_t did = 0;
-    struct window *window = window_manager_focused_window(&g_window_manager);
+    uint32_t display_count = 0;
+    CGGetActiveDisplayList(0, NULL, &display_count);
 
-    if (window) did = window_display_id(window->id);
-    if (!did)   did = display_manager_active_display_id();
-    if (!did)   return 0;
+    //
+    // NOTE: With a single display the focused window must be on that display,
+    // so there is no need to ask the frontmost application over AX.
+    //
 
+    if (display_count == 1) {
+        CGGetActiveDisplayList(1, &did, &display_count);
+    } else {
+        struct window *window = window_manager_focused_window(&g_window_manager);
+        if (window) did = window_display_id(window->id);
+        if (!did)   did = display_manager_active_display_id();
+    }
+
+    if (!did) return 0;
     return display_space_id(did);
 }
 

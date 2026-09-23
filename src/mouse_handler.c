@@ -64,7 +64,17 @@ static MOUSE_HANDLER(mouse_handler)
         uint8_t mod = mouse_mod_from_cgflags(CGEventGetFlags(event));
         if (mod == mouse_state->modifier) return event;
 
-        event_loop_post(&g_event_loop, MOUSE_MOVED, (void *) CFRetain(event), mod);
+        //
+        // NOTE: Only the latest position matters. While a move is still queued we swap in the
+        // newer event instead of posting another one, so a burst of moves costs a single lookup.
+        //
+
+        void *previous = __atomic_exchange_n(&mouse_state->pending_move, (void *) CFRetain(event), __ATOMIC_ACQ_REL);
+        if (previous) {
+            CFRelease(previous);
+        } else {
+            event_loop_post(&g_event_loop, MOUSE_MOVED, NULL, mod);
+        }
     } break;
     case /* kCGSEventDockControl */ 30: {
         int type = CGEventGetIntegerValueField(event, /* kCGEventGestureHIDType */ 110);
