@@ -7,11 +7,7 @@
 #include <mach-o/swap.h>
 #include <bootstrap.h>
 
-#ifdef __x86_64__
-#include <emmintrin.h>
-#elif __arm64__
 #include <arm_neon.h>
-#endif
 
 #include <stdio.h>
 #include <stddef.h>
