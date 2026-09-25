@@ -55,6 +55,34 @@ static void ffm_set_pending(uint64_t key)
     g_mouse_state.ffm_time = read_os_timer();
 }
 
+//
+// NOTE: The menu notifications only say that a menu might be open. The WindowServer decides
+// whether one is still on screen. Counting kAXMenuOpenedNotification against
+// kAXMenuClosedNotification drifts when an application quits or hangs with a menu open,
+// and autofocus then stays off.
+//
+
+static bool menu_maybe_open;
+
+static bool menu_is_on_screen(void)
+{
+    bool result = false;
+    int menu_level = CGWindowLevelForKey(kCGPopUpMenuWindowLevelKey);
+
+    CFArrayRef window_list = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
+    if (!window_list) return false;
+
+    for (int i = 0; i < CFArrayGetCount(window_list) && !result; ++i) {
+        int level = 0;
+        CFNumberRef level_ref = CFDictionaryGetValue(CFArrayGetValueAtIndex(window_list, i), kCGWindowLayer);
+        if (level_ref) CFNumberGetValue(level_ref, kCFNumberIntType, &level);
+        result = level == menu_level;
+    }
+
+    CFRelease(window_list);
+    return result;
+}
+
 static void window_did_receive_focus(struct window_manager *wm, struct mouse_state *ms, struct window *window)
 {
     struct window *focused_window = window_manager_find_window(wm, wm->focused_window_id);
@@ -1382,6 +1410,11 @@ static EVENT_HANDLER(MOUSE_MOVED)
     if (g_window_manager.ffm_mode == FFM_DISABLED) goto out;
     if (mission_control_is_active())               goto out;
 
+    if (menu_maybe_open) {
+        if (menu_is_on_screen()) goto out;
+        menu_maybe_open = false;
+    }
+
     if (__atomic_load_n(&__pending_gesture, __ATOMIC_RELAXED)) goto out;
     uint64_t last_gesture_time = __atomic_load_n(&__last_gesture_time, __ATOMIC_RELAXED);
     float dt = ((float) read_os_timer() - last_gesture_time) * (1000.0f / (float)read_os_freq());
@@ -1598,30 +1631,15 @@ static EVENT_HANDLER(DOCK_DID_RESTART)
     event_signal_push(SIGNAL_DOCK_DID_RESTART, NULL);
 }
 
-static enum ffm_mode ffm_value;
-static int is_menu_open = 0;
-
 static EVENT_HANDLER(MENU_OPENED)
 {
     debug("%s\n", __FUNCTION__);
-    ++is_menu_open;
-
-    if (is_menu_open == 1) {
-        ffm_value = g_window_manager.ffm_mode;
-        g_window_manager.ffm_mode = FFM_DISABLED;
-    }
+    menu_maybe_open = true;
 }
 
 static EVENT_HANDLER(MENU_CLOSED)
 {
     debug("%s\n", __FUNCTION__);
-    --is_menu_open;
-
-    if (is_menu_open == 0) {
-        g_window_manager.ffm_mode = ffm_value;
-    } else if (is_menu_open < 0) {
-        is_menu_open = 0;
-    }
 }
 
 static EVENT_HANDLER(MENU_BAR_HIDDEN_CHANGED)
