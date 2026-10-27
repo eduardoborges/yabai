@@ -23,6 +23,17 @@
   </a>
 </p>
 
+> [!IMPORTANT]
+> **This fork supports macOS 27 Golden Gate, including 27.2.**
+>
+> Upstream yabai v7.1.25 came out before Golden Gate. On macOS 27 its scripting addition loads but finds nothing in the Dock, so `yabai -m space --focus`, `--create` and `--destroy` exit 0 and do nothing. This fork carries the Dock offsets for 27.0 and 27.2, for both the arm64e and arm64e.x1 slices, and has been tested on 27.2 build 26B123.
+>
+> ```sh
+> brew install eduardoborges/tap/yabai
+> ```
+>
+> Moving a space to another display does not work on 27.2, because the Dock no longer has `DPDesktopPictureManager`.
+
 ## About
 
 <img align="right" width="40%" src="assets/screenshot.png" alt="Screenshot">
