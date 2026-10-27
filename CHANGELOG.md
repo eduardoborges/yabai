@@ -7,6 +7,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 ### Changed
 - Added support for macOS 27 Golden Gate, with scripting-addition patterns for both the arm64e and arm64e.x1 Dock binaries
+- Added support for macOS 27.2, which moved the scripting-addition targets and replaced *currentSpaceForDisplayUUID:*. Moving spaces between displays does not work on 27.2 [#2832](https://github.com/asmvik/yabai/issues/2832)
 - Removed support for Intel x86-64
 - Fixed focus follows mouse stalling while a focus change is pending, and removed the delay when switching between windows of the same application
 - Made space changes faster by skipping the AX query for the active display on single-display setups, not animating layouts that changed while the space was hidden, and not re-querying applications whose missing windows are on hidden spaces

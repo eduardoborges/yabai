@@ -494,6 +494,23 @@ static void do_space_create(char *message)
     });
 }
 
+static inline id current_space_for_display(CFStringRef display_uuid, uint64_t space_id)
+{
+    SEL selector = macOSSequoia ? @selector(currentSpaceForDisplayUUID:) : @selector(currentSpaceforDisplayUUID:);
+    if ([dock_spaces respondsToSelector:selector]) {
+        return ((id (*)(id, SEL, CFStringRef)) objc_msgSend)(dock_spaces, selector, display_uuid);
+    }
+
+    // 27.2 replaced it with currentSpaceForDisplay:, which takes a CGDirectDisplayID
+    if ([dock_spaces respondsToSelector:@selector(displayForSPID:)] &&
+        [dock_spaces respondsToSelector:@selector(currentSpaceForDisplay:)]) {
+        uint32_t display_id = ((uint32_t (*)(id, SEL, uint64_t)) objc_msgSend)(dock_spaces, @selector(displayForSPID:), space_id);
+        return ((id (*)(id, SEL, uint32_t)) objc_msgSend)(dock_spaces, @selector(currentSpaceForDisplay:), display_id);
+    }
+
+    return nil;
+}
+
 static void do_space_focus(char *message)
 {
     if (dock_spaces == nil) return;
@@ -503,9 +520,7 @@ static void do_space_focus(char *message)
 
     if (dest_space_id) {
         CFStringRef dest_display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), dest_space_id);
-        id source_space = macOSSequoia
-                        ? ((id (*)(id, SEL, CFStringRef)) objc_msgSend)(dock_spaces, @selector(currentSpaceForDisplayUUID:), dest_display)
-                        : ((id (*)(id, SEL, CFStringRef)) objc_msgSend)(dock_spaces, @selector(currentSpaceforDisplayUUID:), dest_display);
+        id source_space = current_space_for_display(dest_display, dest_space_id);
         uint64_t source_space_id = get_space_id(source_space);
 
         if (source_space_id != dest_space_id) {

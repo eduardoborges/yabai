@@ -6,7 +6,7 @@
 
 uint64_t get_dock_spaces_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
-        return 0x2f000;
+        return os_version.minorVersion >= 2 ? 0x20000 : 0x2f000;
     } else if (os_version.majorVersion == 26) {
         return 0x30000;
     } else if (os_version.majorVersion == 15) {
@@ -42,7 +42,7 @@ uint64_t get_dppm_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_fix_animation_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
-        return 0x218000;
+        return os_version.minorVersion >= 2 ? 0x160000 : 0x218000;
     } else if (os_version.majorVersion == 26) {
         return 0x250000;
     } else if (os_version.majorVersion == 15) {
@@ -60,7 +60,7 @@ uint64_t get_fix_animation_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_add_space_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
-        return 0x218000;
+        return os_version.minorVersion >= 2 ? 0x160000 : 0x218000;
     } else if (os_version.majorVersion == 26) {
         return 0x250000;
     } else if (os_version.majorVersion == 15) {
@@ -78,7 +78,7 @@ uint64_t get_add_space_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_remove_space_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
-        return 0x181000;
+        return os_version.minorVersion >= 2 ? 0x120000 : 0x181000;
     } else if (os_version.majorVersion == 26) {
         return 0x1e0000;
     } else if (os_version.majorVersion == 15) {
@@ -152,6 +152,8 @@ const char *get_dock_spaces_pattern(NSOperatingSystemVersion os_version) {
 
 const char *get_dppm_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
+        // 27.2 dropped DPDesktopPictureManager
+        if (os_version.minorVersion >= 2) return NULL;
         return "?? ?? 00 ?? 08 ?? ?? 91 00 01 40 F9 E2 03 16 AA E3 03 19 AA ?? ?? ?? 94";
     } else if (os_version.majorVersion == 26) {
         //Pulling from function 'DPRemoteConnection::_handleEvent:'
@@ -193,6 +195,9 @@ const char *get_fix_animation_pattern(NSOperatingSystemVersion os_version) {
 const char *get_add_space_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
         // arm64e starts with pacibsp, arm64e.x1 with pacibsppc
+        if (os_version.minorVersion >= 2) {
+            return "?? ?? ?? ?? E1 03 1E AA ?? ?? ?? 97 FE 03 01 AA FD 7B 05 A9 FD 43 01 91 F3 03 14 AA F5 03 00 AA 96 8E 43 F8";
+        }
         return "?? ?? ?? ?? E1 03 1E AA ?? ?? ?? 97 FE 03 01 AA FD 7B 05 A9 FD 43 01 91 F3 03 14 AA F5 03";
     } else if (os_version.majorVersion == 26) {
         if (os_version.minorVersion >= 4) {
@@ -233,6 +238,8 @@ const char *get_remove_space_pattern(NSOperatingSystemVersion os_version) {
 
 const char *get_move_space_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
+        // 27.2 has no moveSpace:toDisplay:displayUUID: to pair it with
+        if (os_version.minorVersion >= 2) return NULL;
         // arm64e starts with pacibsp, arm64e.x1 with pacibsppc
         return "?? ?? ?? ?? E3 03 1E AA ?? ?? ?? 97 FE 03 03 AA FD 7B ?? A9 FD ?? ?? 91 F6 03 14 AA";
     } else if (os_version.majorVersion == 26) {
